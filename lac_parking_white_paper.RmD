@@ -1,0 +1,371 @@
+---
+title: "Beneath the Pavement: How Taxing LA County's Parking Lots at Market Value Could Unlock Millions in New Revenue."
+author: |
+ | Stan Oklobdzija, Ph.D 
+ | Research Director, California YIMBY
+date: "`r format(Sys.Date(),'%B %d, %Y')`"
+header-includes:
+- \setlength\parindent{24pt}
+- \usepackage{indentfirst}
+- \usepackage{float}
+- \usepackage{graphicx}
+- \usepackage{lscape}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+- \usepackage[table]{xcolor}
+- \usepackage{tabu}
+- \usepackage{booktabs}
+
+
+output: 
+  bookdown::pdf_document2:
+    keep_tex: true
+    toc: no
+    fig_caption: yes
+      
+biblio-style: apsr
+    
+linestretch: 2 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Introduction {-}
+
+
+Los Angeles County--home to 25 percent of California's population--is illustrative of how Proposition 13 allowed for thousands of commercial properties to pay taxes on a fraction of what the land they occupy is truly worth. In some of LA's priciest neighborhoods, commercial parking lots continue to be assessed at decades-old prices that have fallen grossly out-of-step with current land values--sometimes by even hundreds of dollars per square foot. The result is that a surface lot--a simple flat surface of asphalt and paint--can pay substantially less in property taxes than an apartment building or small business just next door. Multiplied by the approximately 12,000 lots in Los Angeles County, this loophole costs the county millions of dollars per year in foregone revenue at a time when governments across California are in desperate need of cash due. 
+
+Examining just commercial parking lots in Los Angeles County, I find that these parcels were under-assessed by about \$8.6 billion in 2019. As a result, parking lots alone cost Los Angeles County about \$101 million in foregone property taxes in that year alone. Alternative tax schemes that assess commercial properties at the fair-market value of their land could not only raise billions of dollars in additional revenues for counties across the state. 
+
+
+## How a Property Gets Taxed in California and Why This is a Problem {-}
+
+
+In California, determining how much each piece of land and each building gets taxed is the job of the county assessor. By state law, that person has to prepare a list of all taxable property in a county and determine the value of both the built structures on the property as well as the land beneath it. These values, as well as other details about these "parcels," are published annually as a document called the Local Property Tax Roll^[Read more in this guide to property tax assessment produced by the California State Board of Equalization: https://www.boe.ca.gov/proptaxes/pdf/pub29.pdf.]. Following the change in the California Constitution in the wake of Proposition 13, no property in California can be taxed for more than one percent of its total value--i.e. the value of both the land and the structures on it. 
+
+
+Included in the Local Property Tax Roll is also information about when each parcel was "assessed"--meaning the last year the value of the property was reevaluated. This is important because not only does Proposition 13 freeze the value of a property to the time it was sold, but it also prohibits its assessed value from increasing more than two percent per year to account for inflation. Therefore, the taxable value of a property worth \$100,000 could increase by no more than \$2,000 in the first year, \$2,040 in the second year, etc. 
+
+
+
+```{r propThirteen, echo=F, message=F, warning=F, fig.cap="Land Value Inflation in California Metro Areas from 1984 to 2018. Data compiled by Dr. Morris Davis of the Rutgers Business School and housed at https://www.aei.org/historical-land-price-indicators/."}
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(scales)
+
+##Data from AEI
+##Downloaded from https://www.aei.org/historical-land-price-indicators/
+
+
+##Fake Prop 13 Index
+prop13 <- 1
+for (i in seq_along(1985:2018)){
+  y <- prop13[i] + (prop13[i]*.02)
+  prop13 <- c(prop13, y)
+}
+
+data <- read_xlsx("LANDDATA.MSA_.2018Q2.xlsx", skip=1) %>% 
+  mutate(year=substr(Date,1,4)) %>% filter(MSA %in% c("SANJOSE","SACRAMENTO","SANDIEGO","SANFRANCISCO",
+                                                      "LOSANGELES","SANTAANA")) %>%
+  group_by(year, MSA) %>% summarise(mean_val = mean(`Land Value`)) %>% 
+  bind_rows(data.frame(year=as.character(1984:2018), MSA="Prop13", mean_val=prop13)) %>%
+  group_by(MSA) %>%
+  arrange(year) %>%
+  mutate(pct_change=(mean_val-first(mean_val))/first(mean_val)) %>%
+  mutate(pct_change=ifelse(is.na(pct_change), 0, pct_change),
+         MSA = case_when(MSA=="SACRAMENTO" ~ "Sacramento",
+                         MSA=="SANJOSE" ~ "San Jose",
+                         MSA=="SANDIEGO" ~ "San Diego",
+                         MSA=="SANFRANCISCO" ~ "San Francisco",
+                         MSA=="LOSANGELES" ~ "Los Angeles",
+                         MSA=="SANTAANA" ~ "Santa Ana",
+                         TRUE~ "Prop 13 Index"))
+  
+ggplot(data, aes(x=as.numeric(year),y=pct_change, color=MSA)) + geom_point() + geom_line() +
+  theme_bw() + theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) + 
+  scale_x_continuous("Year", breaks=seq(1984,2018,by=2)) +
+  scale_y_continuous("Percent Change",labels=scales::percent) 
+  
+
+```
+
+
+The problem with this is that in many parts of California, the value of land is increasing at far greater than two percent per year. As Figure \@ref(fig:propThirteen) shows, land prices have grown far faster in most of the state than the two percent ceiling imposed by Proposition 13. As a result, those who locked in assessments decades ago are substantially underpaying on property taxes relative to the actual worth of what they own. 
+
+
+##LA County's 12,000 Parking Lots {-}
+
+
+```{r, echo=F} 
+##This is the data file with lot sizes and tax info. 
+library(tidyverse)
+load("data_lotsize.rda")
+
+##lets make various categories
+likely_parking <- c("2700","2710","2720","2730")
+
+sfh <- unique(data$PropertyUseCode[data$GeneralUseType=="Residential"]) 
+
+mx_house <- sfh[grepl("V",sfh)==F & substr(sfh,1,2)!="01"]
+
+sfh <- sfh[grepl("V",sfh)==F & substr(sfh,1,2)=="01"]
+
+store <- c("1100")
+
+mx_store <- c("1200","1210", "1218")
+
+office <- seq(1700,1720,by=10) %>% c(1900, 1709)
+
+shopping_cent <- c(1500,1600)
+
+data <- data %>%
+  mutate(prop_tax_2019=netTaxableValue*(tax_rate*.01),
+         is_tax = ifelse(`isTaxableParcel?`=="Y",1,0),
+         last_ass = ifelse(LandBaseYear > ImpBaseYear, LandBaseYear, ImpBaseYear),
+         act_sqft = ifelse(PropertyUseCode %in% likely_parking, 
+                           Shape_Area-SQFTmain, SQFTmain),
+         tax_sqft = prop_tax_2019/act_sqft, 
+         type = case_when(PropertyUseCode %in% likely_parking ~ "Parking Lot",
+                          PropertyUseCode %in% sfh ~ "sfh",
+                          PropertyUseCode %in% mx_house ~ "mx_family",
+                          PropertyUseCode %in% store ~ "Store",
+                          PropertyUseCode %in% mx_store ~ "Mixed-Use Store",
+                          PropertyUseCode %in% office ~ "Office Building",
+                          PropertyUseCode %in% shopping_cent ~ "Shopping Center",
+                          TRUE ~ "Other"))
+
+```
+
+
+Los Angeles County is home to `r prettyNum(nrow(data[data$PropertyUseCode %in% likely_parking,]), big.mark=",")` parking lots, according to data from the [LA County Assessor's Office](https://data.lacounty.gov/Parcel-/Assessor-Parcels-Data-2019/csig-gtr7). Together, those lots take up about `r format(sum(data$Shape_Area[data$PropertyUseCode %in% likely_parking]*3.587006427915519e-8), digits=2)` square miles of land, an area larger than Los Angeles International Airport. The city of Los Angeles alone has `r prettyNum(nrow(data[data$PropertyUseCode %in% likely_parking & data$City=="LOS ANGELES CA",]), big.mark=",")` parking lots, spanning over `r format(sum(data$Shape_Area[data$PropertyUseCode %in% likely_parking & data$City=="LOS ANGELES CA"])*3.587006427915519e-8, digits=2)` square miles--an area equivalent to about seven Exposition Parks. 
+
+LA County's paid lots are also older than many other commercial properties in the county. The median year a paid parking lot was built is `r median(data$YearBuilt[data$PropertyUseCode %in% likely_parking & data$YearBuilt > 1900])`. That means 50 percent of the county's parking lots were built well before Proposition 13 took effect. Parking lots also change hands less frequently, meaning they're reassessed less often. The land they occupy was last assessed, on average, about two years before shopping centers and a year before office buildings. About `r data %>% filter(GeneralUseType=="Commercial" & LandBaseYear > 1900 & is_tax==1 & PropertyUseCode %in% likely_parking) %>% summarise(n_1980=sum(LandBaseYear <= 1980),n=n(), percent = round((n_1980/n)*100, digits=0)) %>% select(percent) %>% unname()` percent of parking lots in Los Angeles County were last assessed in 1980 or before. 
+
+
+##LA County's Missing Money {-}
+
+
+What would happen if California amended Proposition 13 and taxed commercial properties on the actual value of the land they occupied? For one, property owners would be incentivized to develop their land into more productive uses rather than sitting as fallow fields of asphalt. Thanks to Proposition 13, a parking lot such as the one pictured below makes as much financial sense in 1950 as it does in 2020--even though land values in areas such as Downtown Los Angeles have skyrocketed in the intervening 70 years.
+
+![A parking lot on the corner of Main St. and Winston St. in Los Angeles, 1950. Photo from https://losangelestheatres.blogspot.com/2019/04/muse-theatre.html](atlas_parking_1950.jpg)
+
+![That same parking lot over 60 years later in 2017. Photo from Google Street View.](atlas_2017.png)
+
+
+```{r echo=F, message=F, warning=F, fig.cap="Average Assessed Land Value of a Parking Lot in Downtown Los Angeles vs Actual Price per Square Foot for Commercial Property."}
+library(scales)
+dtla <- data %>% filter(ZIPcode5 %in% 90012:90015)  %>% mutate(price_sqft=LandValue/Shape_Area)
+
+##calculate a proper price per square foot by looking 
+##at properties that have been reassessed post 2015
+
+act_value <- dtla %>% filter(LandBaseYear > 2015 & is_tax==1 & GeneralUseType=="Commercial") %>%
+  summarise(mean = mean(LandValue/Shape_Area),
+            obs=n()) %>%
+  mutate(type="Commercial Parcels > 2015")
+
+dtla %>% filter(type=="Parking Lot" & is_tax==1 & GeneralUseType=="Commercial") %>%
+  summarise(mean = mean(LandValue/Shape_Area),
+            obs=n()) %>% mutate(type="Parking Lots") %>%
+  bind_rows(act_value) %>%
+  ggplot(aes(x=type, y=mean)) + geom_bar(stat="identity") + xlab("Type") +
+  scale_y_continuous("Average Price Per Square Foot", labels=dollar) + theme_bw()
+  
+
+```
+
+
+Using Downtown Los Angeles as an example, the average parking lot pays property taxes as if the land it occupied were worth just \$133.26 per square foot. In actuality, using properties in Downtown LA assessed since 2015 as a guide, commercial land costs $262.50--a difference of over \$130 per square foot. On average, a parking lot in Downtown LA occupies `r dtla %>% filter(type=="Parking Lot") %>% summarise(mean=mean(Shape_Area)) %>% round(digits=2) %>%prettyNum(big.mark=",")` square feet--meaning it's undervalued by over \$1.7 million. 
+
+
+With this methodology, one can look at the total under-assessment of land for parking lots across Los Angeles County. Doing so allows one to not only calculate the true value of the land they sit upon, but what they'd actually pay in property taxes if assessed at the proper valuation. Simply put, this data shows us just how much taxing one underutilized commercial asset--in this case paid parking lots--could raise for California in these times of fiscal desperation. 
+
+
+## Millions of Dollars Buried in Asphalt  {-}
+
+
+To begin, I break down Los Angeles County's commercial properties into zip codes. As before, I subset properties who were last assessed in 2015 or later as a proxy for actual current land prices. Doing so produces a map of current estimates for commercial land prices across the LA region (Fig. \@ref(fig:mapValues)). 
+
+
+```{r mapValues, echo = FALSE, message=FALSE, warning=FALSE, fig.height=9,fig.cap="Estimated Current Commercial Land Values per Square Foot."}
+library(tidyverse)
+library(scales)
+library(DT)
+
+
+##create actual land values for each zipcode in LA County
+
+act_value <- data %>% filter(LandBaseYear >= 2015 & is_tax==1 & GeneralUseType=="Commercial"
+                             & substr(ZIPcode5,1,1)=="9") %>%
+  group_by(ZIPcode5) %>%
+  summarise(mean = as.numeric(mean_cl_normal(LandValue/Shape_Area)[1]),
+            ymax=as.numeric(mean_cl_normal(LandValue/Shape_Area)[3]),
+            ymin = as.numeric(mean_cl_normal(LandValue/Shape_Area)[2]),
+            mean_area = mean(Shape_Area),
+            obs=n()) %>%
+  rename("Zip"="ZIPcode5") %>%
+  mutate(Zip=as.character(Zip))
+
+
+### create interactive map
+library(leaflet)
+library(tigris)
+library(scales)
+
+##get zipcode maps
+
+#map_shape <- zctas(cb=T, year=2018) %>% rename("Zip"="ZCTA5CE10")
+#save(map_shape, file="zipmaps.rda")
+load("zipmaps.rda")
+
+map <- geo_join(map_shape, act_value, by="Zip") %>%
+  filter(!is.na(mean)) %>% fortify()
+
+##define break points
+breaks <- quantile(act_value$mean, probs=seq(0,1,by=.2))
+
+pal <- colorBin("Reds",domain=act_value$mean, na.color="grey",bin=breaks)
+
+# Render final map in leaflet.
+#library(htmlwidgets)
+library(ggplot2)
+library(usmap)
+library(ggthemes)
+
+break_names <- c(paste0("0 to ",dollar(unname(breaks))[1]), 
+    paste0(dollar(unname(breaks))[1]," to ",dollar(unname(breaks))[2]),
+    paste0(dollar(unname(breaks))[2]," to ",dollar(unname(breaks))[3]),
+    paste0(dollar(unname(breaks))[3]," to ",dollar(unname(breaks))[4]),
+    paste0(dollar(unname(breaks))[4]," to ",dollar(unname(breaks))[5]),
+    paste0(dollar(unname(breaks))[5]," or higher"))
+
+map %>% mutate(quant=findInterval(mean, breaks)) %>%
+  ggplot(aes(fill=quant)) + geom_sf() + 
+  scale_fill_gradient("Estimated Actual Commercial Property Values (per sq. ft.)",low="white", high="red", na.value = "grey",
+                      breaks=1:6,labels=break_names, limits=c(0,6)) +
+  guides(fill= guide_legend(label.theme = element_text(size=6,angle=45))) +
+  theme_map() + theme(legend.position = "bottom")
+
+# leaflet(data = leafmap) %>% addTiles() %>%
+#   setView(lat=34.0522,lng= -118.2437, zoom=9) %>%
+#   addPolygons(fillColor = ~pal(mean), 
+#               fillOpacity = 0.8, 
+#               color = "#BDBDC3", 
+#               weight = 1,
+#               popup = popup_dat)
+
+```
+
+
+Using these estimates, I'm now able to calculate the differential in the land values that LA County parking lots are assessed at versus what that land actually costs. For example, take this parking lot located at the corner of 9th and Hill Streets in downtown Los Angeles. 
+
+![A view of a commercial parking lot at the corner of 9th and Hill St. in downtown Los Angeles in 1962. Photo from https://losangelestheatres.blogspot.com/2018/10/hillstreet-theatre.html](joes_parking_1962.jpg)
+
+![A view of that same commercial parking lot in 2020. Nearly 60 years later, the same parking lot still occupies that space. Author's photo.](joes_parking_2020.jpg)
+
+This parking lot occupies 31,709 square feet of prime Los Angeles real estate. Immediately adjacent are three luxury apartment buildings and the Ace Hotel, while the 7th St/Metro Center train station is just half a mile away. According to Assessor data, the land this parking lot sits on is worth \$3.02 million or about \$95 per square foot. However, other commercial properties in that zip code, (90014), assessed since 2015 are valued at an average \$371 per square foot--a difference of \$`r 371-95`. As property taxes are about one percent of a parcel's assessed value, that means this one particular parking lot receives a tax break of about \$`r prettyNum(signif((((31709*276)-3020563)*.01), digits=2), big.mark=",")` per year. 
+
+
+
+```{r totalAssess, echo = FALSE, message=FALSE, warning=FALSE, fig.cap="Total Assessed Value of LA County Paid Parking Lots vs. Total Value of LA County Paid Parking Lots if Assessed at Current Land Values. Error bars show 95% confidence interval of the estimate."}
+
+##I subsetted just to taxable parcels and removed observations where the land is assessed at a dollar for some reason
+
+tax_diff <- data %>% filter(PropertyUseCode %in% likely_parking & is_tax==1) %>% 
+  mutate(Zip=as.character(ZIPcode5)) %>%
+  merge(act_value, by="Zip") %>% rename("est_act_value"="mean", 
+                                                           "upp_est_value"="ymax",
+                                                           "low_est_value"="ymin") %>%
+  mutate(act_land_value=ifelse(LandBaseYear<2015 & LandValue >50,Shape_Area*est_act_value,LandValue), 
+         act_land_val_low=ifelse(LandBaseYear<2015 & LandValue >50,Shape_Area*low_est_value,LandValue),
+         act_land_val_hi=ifelse(LandBaseYear<2015 & LandValue >50,Shape_Area*upp_est_value,LandValue),
+         land_val_diff = act_land_value-LandValue,
+         land_val_diff_hi = act_land_val_hi-LandValue,
+         land_val_diff_low = act_land_val_low-LandValue,
+         new_tax_val = (act_land_value+ImprovementValue)-TotalExemption,
+         act_prop_tax_2019 = new_tax_val*(tax_rate*.01), 
+         prop_tax_diff = act_prop_tax_2019-prop_tax_2019)
+
+x <- tax_diff %>%
+  summarise(sum_current = sum(LandValue),
+            sum_mr=sum(act_land_value),
+            sum_mr_low = sum(act_land_val_low, na.rm = T),
+            sum_mr_high = sum(act_land_val_hi, na.rm = T))
+  
+data.frame("type"=c("Actual Assessed","Current Land Value"),
+             "Total"=c(x$sum_current,x$sum_mr),
+             "Low"=c(NA,x$sum_mr_low),
+             "High"=c(NA,x$sum_mr_high)) %>%
+  ggplot(aes(x=type, y=Total)) + geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.2) +
+  xlab("Scenario") + scale_y_continuous("Total Value", labels=scales::dollar) +
+  theme_bw() + coord_flip()
+
+
+```
+
+
+As shown in Figure \@ref(fig:totalAssess), LA County paid parking lots are under-assessed somewhere in the neighborhood of `r dollar(signif(x$sum_mr-x$sum_current),digits=2)`. On average, a parking lot in Los Angeles County sits on land that's undervalued by a median value of `r dollar(median(tax_diff$land_val_diff))`. The examples of undervalued properties are abundant. For instance, one commercial parking lot in Beverly Hills is assessed at just `r dollar(tax_diff$LandValue[tax_diff$AIN=="4328014036"]/tax_diff$Shape_Area[tax_diff$AIN=="4328014036"])` per square foot when commercial land in the surrounding zip code was valued at `r dollar(tax_diff$est_act_value[tax_diff$AIN=="4328014036"])`. Given the over 16,000 square-foot parcel, that one lot was under-assessed by about `r dollar(signif(tax_diff$land_val_diff[tax_diff$AIN=="4328014036"], digits=3))`. 
+
+
+
+
+```{r totalRev, echo = FALSE, message=FALSE, warning=FALSE, fig.cap="Total Property Taxes Paid by LA County Paid Parking Lots vs. Total Potential Property Tax if Parking Lots were Assessed at Current Commercial Land Values. Error bars show 95% confidence interval of the estimate."}
+
+##I subsetted just to taxable parcels and removed observations where the land is assessed at a dollar for some reason
+
+tax_diff <- data %>% filter(PropertyUseCode %in% likely_parking & is_tax==1) %>% 
+  mutate(Zip=as.character(ZIPcode5)) %>%
+  merge(act_value, by="Zip") %>% rename("est_act_value"="mean", 
+                                                           "upp_est_value"="ymax",
+                                                           "low_est_value"="ymin") %>%
+  mutate(act_land_value=ifelse(LandBaseYear<2015 & LandValue >50,Shape_Area*est_act_value,LandValue), 
+         act_land_val_low=ifelse(LandBaseYear<2015 & LandValue >50,Shape_Area*low_est_value,LandValue),
+         act_land_val_hi=ifelse(LandBaseYear<2015 & LandValue >50,Shape_Area*upp_est_value,LandValue),
+         land_val_diff = act_land_value-LandValue,
+         land_val_diff_hi = act_land_val_hi-LandValue,
+         land_val_diff_low = act_land_val_low-LandValue,
+         new_tax_val = (act_land_value+ImprovementValue)-TotalExemption,
+         new_tax_val_low = (act_land_val_low+ImprovementValue)-TotalExemption,
+         new_tax_val_high = (act_land_val_hi+ImprovementValue)-TotalExemption,
+         act_prop_tax_2019 = new_tax_val*(tax_rate*.01), 
+         act_prop_tax_2019_low = new_tax_val_low*(tax_rate*.01),
+         act_prop_tax_2019_high = new_tax_val_high*(tax_rate*.01),
+         prop_tax_diff = act_prop_tax_2019-prop_tax_2019)
+
+x <- tax_diff %>%
+  summarise(sum_current = sum(prop_tax_2019),
+            sum_mr=sum(act_prop_tax_2019),
+            sum_mr_low = sum(act_prop_tax_2019_low, na.rm = T),
+            sum_mr_high = sum(act_prop_tax_2019_high, na.rm = T))
+  
+data.frame("type"=c("Actual Property Taxes","Property Taxes at Market \n Commercial Rate"),
+             "Total"=c(x$sum_current,x$sum_mr),
+             "Low"=c(NA,x$sum_mr_low),
+             "High"=c(NA,x$sum_mr_high)) %>%
+  ggplot(aes(x=type, y=Total)) + geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.2) +
+  xlab("Scenario") + scale_y_continuous("Total Value", labels=scales::dollar) +
+  theme_bw() + coord_flip()
+
+
+```
+
+
+Figure \@ref(fig:totalRev) shows the total property tax revenue collected from parking lots in Los Angeles County versus what the county potentially could have collected if those lots were taxed at current land values. By not reassessing commercial properties every year, LA County lost out on about `r dollar(signif(x$sum_mr - x$sum_current,3))` of property tax revenue on parking lots alone. Given the average LA Unified School District teacher makes [\$80,000 per year](https://www.dailynews.com/2019/01/12/lausd-teachers-get-paid-less-than-big-city-peers-but-a-6-percent-raise-would-bring-them-closer/), that's enough to hire more than 1,000 additional teachers. 
+
+
+##Conclusion {-}
+
+
+As California recently faced a \$54 billion budget deficit^[See Bean, Adam. "Gov. Newsom OKs budget closing \$54.3 billion deficit." *The San Jose Mercury News, *June 29, 2020.  https://www.mercurynews.com/2020/06/29/california-governor-oks-budget-closing-54-3-billion-deficit/], re-examining how the state collects property taxes could be crucial in making up the revenue shortfall the state is likely to see again this fiscal year as the national response to the COVID-19 pandemic remains moribund. Simply by eliminating the tax break Los Angeles County parking lots enjoy, the county could collect an additional `r dollar(signif(x$sum_mr - x$sum_current,3))`. Of course, parking lots aren't the only type of commercial property in California that take advantage of this tax loophole. There are vast swaths of land in Los Angeles County--including some simply held vacant--that remain under-taxed. 
+
+
+## Acknowledgements {-}
+
+
+Special thanks to Reed Bernet for his invaluable advice on this project. 
